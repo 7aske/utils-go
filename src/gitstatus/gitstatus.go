@@ -20,7 +20,7 @@ type Config struct {
 	src string
 }
 
-func (c *Config) updateConfigSrc() {
+func (c *Config) updateConfigSrc(f string) {
 	p := ""
 	defer func() {
 		if r := recover(); r != nil {
@@ -28,7 +28,7 @@ func (c *Config) updateConfigSrc() {
 		}
 	}()
 	for i := range os.Args {
-		if os.Args[i] == "-f" {
+		if os.Args[i] == f {
 			p = os.Args[i+1]
 			break
 		}
@@ -44,7 +44,6 @@ func (c *Config) updateConfigSrc() {
 var config Config
 var wg = sync.WaitGroup{}
 var errorStrings = []string{"Changes to be committed", "Changes not staged for commit", "Untracked files"}
-var statusOutput []string
 var counter = 0
 var notCounter = 0
 var ignoredFolders = []string{"_test", "_others"}
@@ -52,84 +51,80 @@ var ignoredFolders = []string{"_test", "_others"}
 func main() {
 	runtime.GOMAXPROCS(100)
 	var err error
-	var cwd string
-	var configPath string
-	var configPathHome string
-	cwd, _ = os.Getwd()
-	configPath = path.Join(cwd, "gitstatus.ini")
-	configPathHome = path.Join(os.Getenv("HOME"), "gitstatus.ini")
-	if _, err = os.Stat(configPath); err == nil {
+	ex, err := os.Executable()
+	if err != nil {
+		log.Fatal("cannot locate executable file")
+	}
+	exPath := filepath.Dir(ex)
+	configPath := path.Join(exPath, "gitstatus.ini")
+	configPathHome := path.Join(os.Getenv("HOME"), "gitstatus.ini")
+	if contains("-f", &os.Args) {
+		config.updateConfigSrc("-f")
+	} else if _, err = os.Stat(configPath); err == nil {
 		if err = loadIniToConfig(configPath, &config); err != nil {
-			log.Fatal(err)
+			log.Fatal("cannot load $PWD ini file")
 		}
 	} else if _, err = os.Stat(configPathHome); err == nil {
 		if err = loadIniToConfig(configPathHome, &config); err != nil {
-			log.Fatal(err)
+			log.Fatal("cannot load $HOME ini file")
 		}
+	} else {
+		log.Fatal("cannot load src dir")
 	}
-	if contains("-f", &os.Args) {
-		config.updateConfigSrc()
-	}
+
 	if _, err = os.Stat(config.src); err != nil {
 		log.Fatal("invalid src dir")
 	}
 	fmt.Printf("Path: \t%s\n\n", config.src)
-	wg.Add(1)
-	go getGits(config.src)
-	wg.Wait()
-	for _, repo := range statusOutput {
-		fmt.Println(repo)
-	}
+	getGits(config.src)
 	fmt.Println("\nRepositories checked: " + strconv.Itoa(counter))
 	fmt.Println("Not up-to-date: " + strconv.Itoa(notCounter))
 }
 func getGits(src string) {
 	dir, err := ioutil.ReadDir(src)
 	if err != nil {
-		log.Fatal("unable to read src dir")
+		log.Fatal("unable to read dir " + src)
 	}
 	for _, f := range dir {
-		absPath := path.Join(src, f.Name())
-		if err != nil {
-			fmt.Println("error reading " + absPath)
-		}
 		if f.IsDir() && !contains(f.Name(), &ignoredFolders) {
+			absPath := path.Join(src, f.Name())
 			if f.Name() == ".git" {
 				wg.Add(1)
 				go gitStatus(src)
 			} else if containsDir(".git", absPath) {
 				wg.Add(1)
 				go gitStatus(absPath)
-			}
-			fsDir, err := ioutil.ReadDir(absPath)
-			if err != nil {
-				log.Fatal("unable to read src dir")
-			}
-			for _, fs := range fsDir {
-				fsAbsPath := path.Join(absPath, fs.Name())
-				if fs.IsDir() {
-					if containsDir(".git", fsAbsPath) {
-						wg.Add(1)
-						go gitStatus(fsAbsPath)
+			} else {
+				fsDir, err := ioutil.ReadDir(absPath)
+				if err != nil {
+					log.Fatal("unable to read dir " + absPath)
+				}
+				for _, fs := range fsDir {
+					if fs.IsDir() {
+						fsAbsPath := path.Join(absPath, fs.Name())
+						if containsDir(".git", fsAbsPath) {
+							wg.Add(1)
+							go gitStatus(fsAbsPath)
+						}
 					}
 				}
 			}
 		}
 	}
-	//wg.Wait()
-	wg.Done()
+	wg.Wait()
 }
 func gitStatus(p string) {
 	status := exec.Command("git", "-C", p, "status")
 	out, err := status.Output()
 	if err != nil {
-		fmt.Println("error checking status of " + path.Base(p))
-	}
-	if !isCommited(string(out)) {
-		statusOutput = append(statusOutput, p)
-		notCounter++
+		fmt.Println("error checking status of " + path.Dir(p) + "/" + path.Base(p))
 	}
 	counter++
+	if !isCommited(string(out)) {
+		slice := strings.Split(p, filepath.Base(config.src))
+		fmt.Println(slice[len(slice)-1])
+		notCounter++
+	}
 	wg.Done()
 }
 func contains(search string, slice *[]string) bool {
@@ -169,7 +164,6 @@ func loadIniToConfig(iniPath string, config *Config) error {
 			return errors.New("unable to load ini file")
 		}
 		config.src = configIni.Section("path").Key("src").String()
-
 		if len(config.src) == 0 {
 			return errors.New("invalid config file")
 		} else {
