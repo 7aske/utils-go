@@ -57,8 +57,23 @@ func Progress(total int, current int) {
 	for i := 0; i < ratio; i++ {
 		bar += "#"
 	}
-	for j := 0; j < barsize - ratio; j++ {
+	for j := 0; j < barsize-ratio; j++ {
 		bar += "."
 	}
 	fmt.Printf("\r[%s] Files: %d/%d", bar, current, total)
+}
+
+func ParseArgument(arg string, args []string) string {
+	out := ""
+	defer func() {
+		if r := recover(); r != nil {
+			out = ""
+		}
+	}()
+	for i, a := range args {
+		if a == arg {
+			out = args[i+1]
+		}
+	}
+	return out
 }

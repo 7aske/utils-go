@@ -10,8 +10,25 @@ import (
 
 func main() {
 	cwd, _ := os.Getwd()
-	destFolder := path.Join(cwd, "_dest")
-	images, count := exifdata.ListPhotos(path.Join(cwd, "_test"))
+	destFolder := path.Join(cwd)
+	srcFolder := path.Join(cwd, "_INGEST")
+	if utils.Contains("-f", os.Args) {
+		arg := utils.ParseArgument("-f", os.Args)
+		if path.IsAbs(arg) {
+			srcFolder = arg
+		} else {
+			srcFolder = path.Join(cwd, arg)
+		}
+	}
+	if utils.Contains("-d", os.Args) {
+		arg := utils.ParseArgument("-d", os.Args)
+		if path.IsAbs(arg) {
+			destFolder = arg
+		} else {
+			destFolder = path.Join(cwd, arg)
+		}
+	}
+	images, count := exifdata.ListPhotos(srcFolder)
 	fmt.Println(count)
 	exifData := exifdata.GetExifData(&images)
 	for i, img := range exifData {
@@ -26,6 +43,6 @@ func main() {
 			fmt.Println("error copying", img.Name())
 			continue
 		}
-		utils.Progress(count, i + 1)
+		utils.Progress(count, i+1)
 	}
 }
