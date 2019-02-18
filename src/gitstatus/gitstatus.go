@@ -71,7 +71,9 @@ func main() {
 	} else {
 		log.Fatal("cannot load src dir")
 	}
-
+	if len(os.Args) == 2 {
+		config.src = path.Join(config.src, os.Args[1])
+	}
 	if _, err = os.Stat(config.src); err != nil {
 		log.Fatal("invalid src dir")
 	}
